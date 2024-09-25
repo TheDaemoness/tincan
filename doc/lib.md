@@ -1,3 +1,5 @@
 # tincan
 
-__Can a match box?__
+## Features
+
+- `std`: Adds methods and trait impls that require `std` types.

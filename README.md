@@ -2,12 +2,13 @@ _WIP, untested, yada yada._
 
 # tincan
 
-__no_std async I/O abstractions and utilities.__
+__async I/O abstractions and utilities.__
 
 **tincan** allows writing applications that use message-oriented I/O
 without knowledge of the underlying stream.
 It also contains utilities for constructing I/O streams,
 including wrapping raw byte streams in arbitrary protocols (e.g. TLS).
+It can be used in `no_std` projects, but does require a global allocator.
 
 ## License
 
