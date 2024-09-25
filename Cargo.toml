@@ -1,0 +1,11 @@
+[package]
+name = "tincan"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.68.0"
+
+[dependencies]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "doc_unstable"]
