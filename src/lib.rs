@@ -4,5 +4,6 @@
 
 extern crate alloc;
 
-pub mod buffer;
+pub mod buf;
+pub mod codec;
 pub mod io;

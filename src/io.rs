@@ -10,106 +10,117 @@
 // so we can't use `std::io::Error` as an error type.
 // Besides, `!`/`core::convert::Infallible` is a valid error type for some of these.
 
-use crate::buffer::{BufferReader, BufferWriter};
 use core::{
     num::NonZeroUsize,
     pin::Pin,
     task::{Context, Poll},
 };
+use crate::buf::{BufRead, BufWrite};
 
-/// Trait for the read halves of streams with built-in message framing.
-pub trait FramedRead {
-    type Error: 'static;
-    /// Reads into the provided buffer `buf`.
-    /// Returns the length of the first message available to parse from the buffer.
+/// Trait for the read halves of streams with no message framing.
+pub trait UnframedRead {
+    type Error;
+    /// Reads up to `max_len` bytes into the provided buffer `buf`.
     ///
-    /// This function may make partial updates to the buffer,
-    /// or write more than one message to it.
-    /// However, it will not return [`Poll::Ready`] until there is a full message available,
-    /// and if multiple messages are written,
-    fn read_msg(
+    /// Returns a value that is no less than the length of the next message in the buffer.
+    /// A value of `0` may be interpreted as "unknown".
+    ///
+    /// If this function returns `Poll::Pending`, subsequent calls must use the same value
+    /// for `buf` and `max_len`.
+    fn read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        buf: &mut BufferWriter,
+        buf: &mut dyn BufWrite,
         max_len: NonZeroUsize,
     ) -> Poll<Result<usize, Self::Error>>;
 }
-/// Trait for the read halves of streams with no message framing.
-pub trait UnframedRead {
-    type Error: 'static;
-    fn read_some(
+
+/// Trait for the read halves of streams with built-in message framing.
+///
+/// This trait imposes additional conditions on [`UnframedRead::read`].
+/// Upon returning `Poll::Ready(Ok(len))`, precisely one message that is exactly `len` bytes
+/// long shall have been written to the provided buffer.
+pub trait FramedRead: UnframedRead {}
+
+/// Trait for the write halves of streams with no message framing.
+pub trait UnframedWrite {
+    type Error;
+    /// Writes bytes from the provided buffer `buf`.
+    ///
+    /// msg_len is a hint indicating how many bytes are in the next message.
+    /// This function should attempt to write no fewer than that many bytes.
+    ///
+    /// If this function returns `Poll::Pending`, subsequent calls must use the same value
+    /// for `buf` and `msg_len`.
+    fn write(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        buf: &mut BufferWriter,
-        max_len: NonZeroUsize,
+        buf: &mut dyn BufRead,
+        msg_len: usize,
+    ) -> Poll<Result<(), Self::Error>>;
+
+    /// Flushes any internal buffering.
+    fn flush(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut dyn BufRead,
     ) -> Poll<Result<(), Self::Error>>;
 }
 
 /// Trait for the write halves of streams with built-in message framing.
-pub trait FramedWrite {
-    type Error: 'static;
-    fn write_msg(
+///
+/// This trait imposes additional conditions on [`UnframedWrite::write`].
+/// Upon returning `Poll::Ready(Ok(()))`, exactly `msg_len` bytes must have been written.
+pub trait FramedWrite: UnframedWrite {}
+
+/// Adapter to use buffers as unframed I/O.
+///
+/// [`UnframedRead`] and [`UnframedWrite`] are not blanket-implemented
+/// for [`BufRead`] and [`BufWrite`] implementors respectively because
+/// the blanket implementations would ignore useful functionality of the underlying types.
+/// For instance, the
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default)]
+#[repr(transparent)]
+pub struct AsUnframed<T>(pub T);
+
+impl<T> AsUnframed<T> {
+    /// Coerces a `&mut T` into a `&mut AsUnframed<T>`.
+    pub fn from_mut(mut_ref: &mut T) -> &mut Self {
+        unsafe { &mut *(mut_ref as *mut T as *mut Self) }
+    }
+}
+
+impl<T: BufRead> UnframedRead for AsUnframed<T> {
+    type Error = core::convert::Infallible;
+
+    fn read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        buf: &mut BufferReader,
+        buf: &mut dyn BufWrite,
+        max_len: NonZeroUsize,
+    ) -> Poll<Result<usize, Self::Error>> {
+        todo!()
+    }
+}
+
+impl<T: BufWrite> UnframedWrite for AsUnframed<T> {
+    type Error = core::convert::Infallible;
+
+    fn write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut dyn BufRead,
         msg_len: usize,
-    ) -> Poll<Result<(), Self::Error>>;
-}
+    ) -> Poll<Result<(), Self::Error>> {
+        todo!()
+    }
 
-/// Trait for the write halves of streams with no message framing.
-pub trait UnframedWrite {
-    type Error: 'static;
-    fn write_some(
+    fn flush(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        buf: &mut BufferReader,
-    ) -> Poll<Result<(), Self::Error>>;
+        buf: &mut dyn BufRead,
+    ) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(())
+    }
+
 }
-
-/// Trait for message decoders that operate on [`FramedRead`]s.
-pub trait FramedDecoder {
-    type Error: 'static;
-    type Message<'a>;
-    /// Decodes one message from the buffer, where `msg_len` is equal to the length of the message.
-    /// Returns [`Poll::Pending`] if additional data is needed to return a message.
-    ///
-    /// `msg_len` is the length of the first message in `buf`.
-    /// If `None`, the message length is unknown.
-    /// If this function is called with `msg_len = None` and further parsing isn't possible
-    /// without knowing the message length, `Poll::Pending` shall be returned.
-    ///
-    /// `msg_len` may be larger than the length of `buf`,
-    /// indicating that `buf` contains a partial message.
-    /// If `msg_len` is `usize::MAX`, indicates that the remaining message length is
-    /// greater than or equal to `usize::MAX`.
-    fn decode<'a>(
-        self: Pin<&mut Self>,
-        buf: &'a mut BufferReader,
-        msg_len: Option<usize>,
-    ) -> Poll<Result<Self::Message<'a>, Self::Error>>;
-}
-
-/// Trait for message decoders that operate on [`UnframedRead`]s.
-///
-/// Implementing this trait asserts that [`FramedDecoder::decode`]
-/// does not need to ever be given the message length in order to parse a message.
-pub trait UnframedDecoder: FramedDecoder {}
-
-/// Trait for message encoders that operate on [`FramedWrite`]s.
-pub trait FramedEncoder {
-    /// The type of messages this type can encode.
-    type Message<'a>;
-    /// Encodes `value` to the provided buffer.
-    ///
-    /// This function may not immediately write encoded messages to `buf`.
-    /// [`MsgEncoder::flush`] should be called to ensure that encoded messages are written.
-    fn encode(self: Pin<&mut Self>, value: &Self::Message<'_>, buf: &mut BufferWriter);
-    /// Flushes any internal buffering.
-    fn flush(self: Pin<&mut Self>, buf: &mut BufferWriter);
-}
-
-/// Trait for message encoders that operate on [`UnframedWrite`]s.
-///
-/// Implementing this trait asserts that messages written by this encoder
-/// can be decoded from a plain stream of bytes.
-pub trait UnframedEncoder: FramedEncoder {}

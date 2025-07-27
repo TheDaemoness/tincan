@@ -1,10 +1,11 @@
 [package]
 name = "tincan"
 version = "0.1.0"
-edition = "2021"
-rust-version = "1.68.0"
+edition = "2024"
+rust-version = "1.85.0"
 
 [dependencies]
+cfg-if = "1.0.1"
 
 [features]
 std = []
