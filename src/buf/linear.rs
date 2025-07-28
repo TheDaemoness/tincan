@@ -195,6 +195,14 @@ impl LinearBuf {
     unsafe fn supply_unchecked(&mut self, count: usize) {
         self.input_idx += count;
     }
+    #[inline(always)]
+    #[allow(unused)]
+    fn supply(&mut self, count: usize) {
+        assert!(count <= self.capacity_in());
+        unsafe {
+            self.supply_unchecked(count);
+        }
+    }
     fn full_slice(&self) -> &[MaybeUninit<u8>] {
         unsafe { core::slice::from_raw_parts(self.bytes.as_ptr(), self.capacity) }
     }

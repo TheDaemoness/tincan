@@ -168,7 +168,7 @@ impl<T: BytesPtr> IoRepr<T> {
         Self(IoSliceInner::new(ptr, len), core::marker::PhantomData)
     }
     pub fn into_inner(self) -> T {
-        let ptr = core::ptr::slice_from_raw_parts(self.0.ptr(), self.0.len);
+        let ptr = core::ptr::slice_from_raw_parts(self.0.ptr(), self.0.len());
         unsafe { T::from_bytes_ptr(ptr) }
     }
 }
@@ -180,7 +180,7 @@ where
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        let ptr = core::ptr::slice_from_raw_parts(self.0.ptr(), self.0.len);
+        let ptr = core::ptr::slice_from_raw_parts(self.0.ptr(), self.0.len());
         unsafe { BytesPtr::from_bytes_ptr(ptr) }
     }
 }
