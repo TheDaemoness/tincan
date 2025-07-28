@@ -10,12 +10,11 @@
 // so we can't use `std::io::Error` as an error type.
 // Besides, `!`/`core::convert::Infallible` is a valid error type for some of these.
 
+use crate::buf::{BufRead, BufWrite};
 use core::{
-    num::NonZeroUsize,
     pin::Pin,
     task::{Context, Poll},
 };
-use crate::buf::{BufRead, BufWrite};
 
 /// Trait for the read halves of streams with no message framing.
 pub trait UnframedRead {
@@ -24,14 +23,16 @@ pub trait UnframedRead {
     ///
     /// Returns a value that is no less than the length of the next message in the buffer.
     /// A value of `0` may be interpreted as "unknown".
+    /// The lower bound of `len` indicates how many bytes are wanted by the caller,
+    /// while the upper bound indicates the maxmium amount that may be readed.
     ///
     /// If this function returns `Poll::Pending`, subsequent calls must use the same value
-    /// for `buf` and `max_len`.
+    /// for `buf` and `len`.
     fn read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &mut dyn BufWrite,
-        max_len: NonZeroUsize,
+        len: core::ops::Range<usize>,
     ) -> Poll<Result<usize, Self::Error>>;
 }
 
@@ -72,55 +73,3 @@ pub trait UnframedWrite {
 /// This trait imposes additional conditions on [`UnframedWrite::write`].
 /// Upon returning `Poll::Ready(Ok(()))`, exactly `msg_len` bytes must have been written.
 pub trait FramedWrite: UnframedWrite {}
-
-/// Adapter to use buffers as unframed I/O.
-///
-/// [`UnframedRead`] and [`UnframedWrite`] are not blanket-implemented
-/// for [`BufRead`] and [`BufWrite`] implementors respectively because
-/// the blanket implementations would ignore useful functionality of the underlying types.
-/// For instance, the
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default)]
-#[repr(transparent)]
-pub struct AsUnframed<T>(pub T);
-
-impl<T> AsUnframed<T> {
-    /// Coerces a `&mut T` into a `&mut AsUnframed<T>`.
-    pub fn from_mut(mut_ref: &mut T) -> &mut Self {
-        unsafe { &mut *(mut_ref as *mut T as *mut Self) }
-    }
-}
-
-impl<T: BufRead> UnframedRead for AsUnframed<T> {
-    type Error = core::convert::Infallible;
-
-    fn read(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut dyn BufWrite,
-        max_len: NonZeroUsize,
-    ) -> Poll<Result<usize, Self::Error>> {
-        todo!()
-    }
-}
-
-impl<T: BufWrite> UnframedWrite for AsUnframed<T> {
-    type Error = core::convert::Infallible;
-
-    fn write(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut dyn BufRead,
-        msg_len: usize,
-    ) -> Poll<Result<(), Self::Error>> {
-        todo!()
-    }
-
-    fn flush(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut dyn BufRead,
-    ) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(())
-    }
-
-}
